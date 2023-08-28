@@ -1,0 +1,408 @@
+---
+title: "Data Analysis of Rental Pricing in Klang Valley"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+# Rental Pricing Trend within Klang Valley
+
+Dataset was taken from Kaggle, webscraped from Mudah.com by a public user.
+This project aims to provide visual insights on Klang Valley's rental trend with given category (provided in Mudah website) such as location, size, number of bedrooms, parking or furnished.
+Chosen this project as I am also actively looking for a new unit to move in Klang Valley, having this insights will help me compare my options, evaluating them within the actual market trend.
+
+### Installing data packages and library
+
+```{r}
+options(repos = "https://cloud.r-project.org")
+
+```
+
+```{r}
+install.packages("stringr")
+library(stringr)
+install.packages("ggplot2")
+library(ggplot2)
+install.packages("tidyverse")
+library(tidyverse)
+install.packages("dplyr")
+library(dplyr)
+library(readr)
+install.packages("wordcloud")
+library(wordcloud)
+install.packages("broom")
+library(broom)
+```
+
+```{r}
+rental_df = read.csv("Rental Pricing.csv")
+```
+
+### Data Exploration
+
+**To describe the whole dataset (rows and columns), also checking on how many empty cells are within the dataset**
+
+```{r}
+colnames(rental_df)
+```
+
+```{r}
+str(rental_df)
+```
+
+```{r}
+head(rental_df)
+```
+
+```{r}
+emptycell = colSums(is.na(rental_df))
+print(emptycell)
+```
+
+Dataset is already good as it is.
+Empty cells in column 'parking' and 'completion_year' will be ignored as it will not be used as much in the upcoming analysis.
+
+### Data Preparation
+
+**Checking for numerical outliers in the dataset** \### Checking for outliers and important variable column of interest; size and monthly rent.
+Plotting graph with outliers will make our plots skewed.
+
+```{r}
+ggplot(data = rental_df) +
+  geom_point(mapping = aes(x = size, y = monthly_rent, color = property_type)) +
+  labs(title = "Plotted chart with presence of outliers")
+```
+
+```{r}
+rentsummary = summary(rental_df$monthly_rent)
+q1 = rentsummary["1st Qu."]
+median = rentsummary['Median']
+q3 = rentsummary["3rd Qu."]
+
+lower_limit = q1 - 1.5 * IQR(rental_df$monthly_rent, na.rm = TRUE)
+upper_limit = q3 + 1.5 * IQR(rental_df$monthly_rent, na.rm = TRUE)
+
+
+print(lower_limit)
+print(upper_limit)
+```
+
+```{r}
+par(mfrow = c(1, 2))
+boxplot(rental_df$monthly_rent, main = "Boxplot of Monthly Rent", ylab = "Monthly Rent (RM)", cex.main = 0.8)
+boxplot(rental_df$monthly_rent, main = "Boxplot of Monthly Rent (outliers removed)", ylab = "Monthly Rent (RM)", ylim = c(lower_limit, upper_limit), cex.main = 0.8)
+text(x = 1.25, y = 800, labels = "IQR Range is from \nRM 50 - RM 2850", cex = 0.5)
+```
+
+```{r}
+sizesummary = summary(rental_df$size)
+q1_size = sizesummary["1st Qu."]
+median_size = sizesummary['Median']
+q3_size = sizesummary["3rd Qu."]
+
+size_lowerlimit = q1 - 1.5 * IQR(rental_df$size, na.rm = TRUE)
+size_upperlimit = q3 + 1.5 * IQR(rental_df$size, na.rm = TRUE)
+
+
+print(size_lowerlimit)
+print(size_upperlimit)
+```
+
+```{r}
+par(mfrow = c(1, 2))
+boxplot(rental_df$size, main = "Boxplot of House Size", ylab = "Size (sqft)", cex.main = 0.8)
+boxplot(rental_df$size, main = "Boxplot of House Size (outliers removed)", ylab = "Size (sqft)", ylim = c(size_lowerlimit,size_upperlimit), cex.main = 0.8)
+text(x = 1.25, y = 1200, labels = "IQR Range is from \n659 sqft - 2241 sqft", cex = 0.5)
+```
+
+Creating new dataframe after removing outliers in our numerical column: monthly rent and size.
+
+```{r}
+filteredrental = rental_df %>%
+  filter(monthly_rent <= 2850 & size <= 2241 & monthly_rent > 100 & size > 100)
+
+dim(filteredrental)
+```
+
+```{r}
+summary(filteredrental)
+```
+
+#### Data Visualization
+
+**To easily illustrate trends in our dataset.**
+
+```{r}
+ggplot(data = filteredrental, aes(x ="", fill = region)) +
+  geom_bar(width = 1) +
+  coord_polar("y", start = 0) +
+  theme_void() +
+  labs(title = "Distribution of rental property availability in KL and Selangor", fill = "Region")
+```
+
+```{r}
+facility_lists = strsplit(filteredrental$facilities, ",")
+
+# Create a list to store the frequency counts
+facility_counts = vector("list", length = length(facility_lists))
+
+# Count the frequency of each variable in the 'facilities' column
+for (i in seq_along(facility_lists)) {
+  facility_counts[[i]] = table(facility_lists[[i]])
+}
+
+facility_characters = unlist(facility_lists)
+
+# Count the frequency of each character
+character_frequency = table(facility_characters)
+
+facility_df = as.data.frame(character_frequency) %>%
+  filter(!(facility_characters %in% c(11,10,6))) %>%
+  arrange(desc(Freq))
+
+wordcloud(words = facility_df$facility_characters, freq = facility_df$Freq,
+          scale = c(2, 0.8), min.freq = 100, random.order = FALSE,
+          rot.per = 0.2, colors = brewer.pal(6, "Dark2"),
+          main = "Distribution of facilities mentioned")
+```
+
+Most listed rentals in Klang Valley are frequently associated with these facilities; security, playground, swimming pool and so on.
+
+```{r}
+location_count = (table(rental_df$district)) %>%
+  as.data.frame() %>%
+  arrange(desc(Freq))
+```
+
+```{r}
+location_count %>%
+  filter(Freq >= 100) %>%
+  ggplot(aes(x = Freq, y = Var1, size = Freq, color = Freq)) +
+  geom_point() +
+  labs(title = "Distribution of Rental Availability according to District", x = "Location", y = "Frequency") +
+  theme_bw() +
+  theme(axis.text.y = element_text(size = 5))
+
+```
+
+```{r}
+ggplot (data = filteredrental) +
+  geom_point(mapping = aes(x = size, y = monthly_rent, color = property_type)) +
+  facet_wrap(~region) + 
+  labs(title = "Distribution of rental property according to Property Type")
+
+```
+
+Removing property type listed with less than 50, to visually improving the plot and analysis.
+
+```{r}
+table(filteredrental$property_type)
+```
+
+```{r}
+apt_rental = filteredrental %>%
+  filter(property_type %in%  c("Apartment", "Condominium", "Service Residence", "Flat", "Studio", "Duplex"))
+
+ggplot (data = apt_rental) +
+  geom_point(mapping = aes(x = size, y = monthly_rent, color = property_type)) +
+  facet_wrap(~region) +
+  labs(title = "Distribution of rental property according to Property Type")
+```
+
+### Analysing rental dependency on variable of interest.
+
+```{r}
+ggplot(filteredrental, aes(x = monthly_rent, fill = furnished)) +
+  geom_density(alpha = 0.7) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Rental dependency on Furnished Condition") +
+  theme_minimal()
+
+```
+
+```{r}
+ggplot(filteredrental, aes(x = monthly_rent, fill = region)) +
+  geom_density(alpha = 0.7) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Rental dependency on Region") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(apt_rental, aes(x = monthly_rent, fill = property_type)) +
+  geom_density(alpha = 0.4) +
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "Rental dependency on Property Type") +
+  theme_minimal()
+```
+
+Extracting "Near KTM/LRT" information into a new column, added onto dataframe.
+
+```{r}
+rental_publictransport = filteredrental %>%
+  mutate(
+    public_transport = str_extract(additional_facilities, "Near KTM/LRT"),
+    public_transport = replace(public_transport, is.na(public_transport), "Not Near KTM/LRT"))
+```
+
+```{r}
+ggplot(rental_publictransport, aes(x = monthly_rent, fill = public_transport)) +
+  geom_density(alpha = 0.4) +
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "Rental dependency on Distance to Public Transport") +
+  theme_minimal()
+```
+
+```{r}
+filteredrental %>%
+  filter(!is.na(furnished) & furnished != "") %>%
+  select(furnished, monthly_rent) %>%
+  ggplot(aes(x = furnished, y = monthly_rent, fill = furnished)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Monthly Rent with Furnished Condition",
+       subtitle = "Median rent for Fully Furnished = RM 1700 \nMedian rent for Not Furnished = RM 1000 \nMedian rent for Partially Furnished = RM 1300") +
+  theme(plot.margin = margin(b=30))
+```
+
+```{r}
+median_data = filteredrental %>%
+  filter(!is.na(furnished) & furnished != "") %>%
+  group_by(furnished) %>%
+  summarize(median_rent = median(monthly_rent))
+print(median_data)
+```
+
+```{r}
+apt_rental %>%
+  select(property_type, monthly_rent) %>%
+  ggplot(aes(x = property_type, y = monthly_rent, fill = property_type)) +
+  geom_boxplot() +
+  labs(title = "Boxplot of Monthly Rent with Property Type") +
+  theme(plot.margin = margin(b=30))
+```
+
+```{r}
+propertymedian_data = apt_rental %>%
+  group_by(property_type) %>%
+  summarize(propertymedian_rent = median(monthly_rent))
+print(propertymedian_data)
+```
+
+**Insights gained from all the visuals generated** As a potential tenant, I'd always consider an affordable rent of below RM 1.5K as my budget, before deciding on a house.
+From this analysis, RM1.5K per month offers a lot of potential unit such as: **1)** Apartment, flat, and condominium shows a median of monthly rent close to RM 1.5k.
+However, service residence can be considered out of the budget.
+**2)**Not furnished and partially furnished rental are still within RM 1.5k budget, however a fully furnished unit median is around RM1.7k **3)** Monthlyl rental for units in Kl are slighly higher that units in Selangor.
+**4)** Vicinity of public transport, whether it is near KTM/LRT or not, does not significantly affect monthly rental as much.
+**5)** Will proceed on using a machine learning model to explore more on variables correlation and feature importance.
+
+### Model prediction using Random Forest
+
+```{r}
+ohe_df = filteredrental %>%
+  filter(property_type %in%  c("Apartment", "Condominium", "Service Residence", "Flat", "Studio", "Duplex")) %>%
+  mutate(
+    public_transport = str_extract(additional_facilities, "Near KTM/LRT"),
+    public_transport = replace(public_transport, is.na(public_transport), "Not Near KTM/LRT")) %>%
+  filter(complete.cases(.))
+
+install.packages("fastDummies")
+library(fastDummies)
+ohe_df = dummy_columns(ohe_df, select_column = c("property_type", "furnished", "region", "public_transport")) %>%
+  select(-'ads_id')
+```
+
+Removing non-numeric column
+
+```{r}
+ohe_numerical = list()
+for (col in names(ohe_df)) {
+  if (is.numeric(ohe_df[[col]])) 
+    ohe_numerical[[col]] = ohe_df[[col]]
+}
+ohe_num_df = data.frame(ohe_numerical)
+```
+
+```{r}
+cor(ohe_num_df)
+```
+
+```{r}
+correlation_table = cor(ohe_num_df)
+cor_df = data.frame(variable = colnames(ohe_num_df), correlation = correlation_table)
+heatmap(correlation_table, 
+        col = colorRampPalette(c("blue", "white", "red"))(100),
+        main = "Correlation Heatmap",
+        xlab = "",
+        ylab = "")
+
+```
+
+Train model
+
+```{r}
+install.packages("randomForest")
+library(randomForest)
+```
+
+```{r}
+set.seed(123)
+train_index = sample(1:nrow(ohe_num_df), 0.8 * nrow(ohe_num_df))
+train_data = ohe_num_df[train_index, ]
+test_data = ohe_num_df[-train_index, ]
+
+# Define the target variable and predictors
+target_variable = "monthly_rent"
+predictors = setdiff(names(ohe_num_df), target_variable)
+
+# Train a Random Forest model
+rental_model = randomForest(formula(paste(target_variable, "~", paste(predictors, collapse = "+"))),
+                      data = train_data)
+
+# Print the model summary
+print(rental_model)
+```
+
+Evaluating feature importance on targeted variable of 'monthly rent'
+
+```{r}
+varImpPlot(rental_model)
+```
+
+```{r}
+prediction = predict(rental_model, newdata = test_data)
+
+actual = test_data$monthly_rent
+ss_total = sum((actual - mean(actual))^2)
+ss_residual = sum((actual - prediction)^2)
+r_squared = 1 - (ss_residual / ss_total)
+
+print(r_squared)
+```
+
+```{r}
+# Create a data frame for plotting
+prediction_df = data.frame(Actual = actual, Predicted = prediction)
+
+# Create Scatter Plot
+ggplot(prediction_df, aes(x = Predicted, y = Actual)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +  # Add diagonal line
+  labs(title = "Predicted vs Actual Values", x = "Predicted", y = "Actual") +
+  theme_minimal()
+```
+
+```{r}
+head(prediction_df)
+```
+
+### Conclusion
+
+Random Forest model r-squared value is at 0.6225412, which only represent 60% of accuracy instead of 100%.
+Model may be needed to be revised, improved or undergo hyperparameter tuning (of which I'm still exploring).
+As for now, this model has illustrated that top 3 variables that highly affected monthly rent in Klang Valley is the unit's size, it's furnished condition and the year it's build.
+Personally, I always thought that public transport facilities (whether its within/outside vicinity) will highly affect rental price, but my analysis shows the contrast.
+This also shows that Klang Valley is definitely a city of cars, and most its potential residents are car owner, hence why it doesnt affect rental price.
